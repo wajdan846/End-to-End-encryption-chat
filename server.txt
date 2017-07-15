@@ -1,0 +1,211 @@
+using System;
+using System.Text;
+using System.IO;
+using System.Net;
+using System.Net.Sockets;
+using System.Threading;
+using System.Security.Cryptography;
+namespace server
+    {
+        public class ThreadedTcpSrvr
+        {
+            private TcpListener client;
+            public string original1;
+            public ThreadedTcpSrvr()
+            {
+                IPAddress ipAd = IPAddress.Parse("172.16.195.101");
+                client = new TcpListener(ipAd, 9050);
+                client.Start();
+                Console.WriteLine("enter server's message to the client");
+                original1 = Console.ReadLine();
+                Console.WriteLine("Waiting for clients...");
+                
+                while (true)
+                {
+                    while (!client.Pending())
+                    {
+                        Thread.Sleep(1000);
+                    }
+
+                    ConnectionThread newconnection = new ConnectionThread();
+                    newconnection.threadListener = client;
+                    newconnection.original = original1;
+                    Thread newthread = new Thread(new ThreadStart(newconnection.HandleConnection));
+                    newthread.Start();
+                }
+            }
+            public static void Main()
+            {
+                ThreadedTcpSrvr server = new ThreadedTcpSrvr();
+            }
+        }
+        public class ConnectionThread
+        {
+            public string original;
+            public TcpListener threadListener;
+            private static int connections = 0;
+            static byte[] EncryptStringToBytes(string plainText, byte[] Key, byte[] IV)
+            {
+                // Check arguments. 
+                if (plainText == null || plainText.Length <= 0)
+                    throw new ArgumentNullException("plainText");
+                if (Key == null || Key.Length <= 0)
+                    throw new ArgumentNullException("Key");
+                if (IV == null || IV.Length <= 0)
+                    throw new ArgumentNullException("IV");
+                byte[] encrypted;
+                // Create an RijndaelManaged object 
+                // with the specified key and IV. 
+                using (RijndaelManaged rijAlg = new RijndaelManaged())
+                {
+                    rijAlg.Key = Key;
+                    rijAlg.IV = IV;
+
+                    // Create a decryptor to perform the stream transform.
+                    ICryptoTransform encryptor = rijAlg.CreateEncryptor(rijAlg.Key, rijAlg.IV);
+
+                    // Create the streams used for encryption. 
+                    using (MemoryStream msEncrypt = new MemoryStream())
+                    {
+                        using (CryptoStream csEncrypt = new CryptoStream(msEncrypt, encryptor, CryptoStreamMode.Write))
+                        {
+                            using (StreamWriter swEncrypt = new StreamWriter(csEncrypt))
+                            {
+
+                                //Write all data to the stream.
+                                swEncrypt.Write(plainText);
+                            }
+                            encrypted = msEncrypt.ToArray();
+                        }
+                    }
+                }
+
+
+                // Return the encrypted bytes from the memory stream. 
+                return encrypted;
+
+            }
+            static string DecryptStringFromBytes(byte[] cipherText, byte[] Key, byte[] IV)
+            {
+                // Check arguments. 
+                if (cipherText == null || cipherText.Length <= 0)
+                    throw new ArgumentNullException("cipherText");
+                if (Key == null || Key.Length <= 0)
+                    throw new ArgumentNullException("Key");
+                if (IV == null || IV.Length <= 0)
+                    throw new ArgumentNullException("IV");
+
+                // Declare the string used to hold 
+                // the decrypted text. 
+                string plaintext = null;
+
+                // Create an RijndaelManaged object 
+                // with the specified key and IV. 
+                using (RijndaelManaged rijAlg = new RijndaelManaged())
+                {
+                    rijAlg.Key = Key;
+                    rijAlg.IV = IV;
+
+                    // Create a decrytor to perform the stream transform.
+                    ICryptoTransform decryptor = rijAlg.CreateDecryptor(rijAlg.Key, rijAlg.IV);
+
+                    // Create the streams used for decryption. 
+                    using (MemoryStream msDecrypt = new MemoryStream(cipherText))
+                    {
+                        using (CryptoStream csDecrypt = new CryptoStream(msDecrypt, decryptor, CryptoStreamMode.Read))
+                        {
+                            using (StreamReader srDecrypt = new StreamReader(csDecrypt))
+                            {
+
+                                // Read the decrypted bytes from the decrypting stream 
+                                // and place them in a string.
+                                plaintext = srDecrypt.ReadToEnd();
+                            }
+                        }
+                    }
+
+                }
+
+                return plaintext;
+
+            }
+            public void HandleConnection()
+            {
+                try
+                {
+                    byte[] data = new byte[100];
+                    TcpClient client = threadListener.AcceptTcpClient();
+                    NetworkStream ns = client.GetStream();
+                    connections++;
+                    Console.WriteLine("New client accepted: {0} active connections", connections);
+                    Socket s = client.Client;
+                    Console.WriteLine("I am connected to " + IPAddress.Parse(((IPEndPoint)s.RemoteEndPoint).Address.ToString()) + "on port number " + ((IPEndPoint)s.RemoteEndPoint).Port.ToString());
+                     
+             byte[] ol = BitConverter.GetBytes(original.Length);
+             int i__ = BitConverter.ToInt32(ol, 0);
+             Console.WriteLine("original length: {0}", original.Length);
+             Console.WriteLine("int: {0}", i__);
+             
+                    //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+                    RijndaelManaged myRijndael = new RijndaelManaged();
+                    byte[] iv_ = new byte[] { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F };
+                    byte[] key_ = new byte[] { 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF };
+                    string r = System.Text.Encoding.UTF8.GetString(key_);
+                    Console.WriteLine("Key: " + r);
+                    byte[] encrypted = EncryptStringToBytes(original, key_, iv_);
+                    string roundtrip = DecryptStringFromBytes(encrypted, key_, iv_);
+                    Console.WriteLine("Original:   {0}", original);
+                    string ciphertext = System.Text.Encoding.UTF8.GetString(encrypted);
+                    Console.WriteLine("encrypted data: {0}", ciphertext);
+                    Console.WriteLine("Round Trip: {0}", roundtrip);
+                    /////////////////////////////////////////////////////////////////////////////////////
+
+
+                    byte[] joinnsend = new byte[encrypted.Length + ol.Length];
+                    ol.CopyTo(joinnsend,0);
+                    encrypted.CopyTo(joinnsend,ol.Length);
+                    ns.Write(joinnsend, 0, joinnsend.Length);             //27 bytes
+                    //ns.Write(encrypted, 0, encrypted.Length);           //16 bytes
+                    while (true)
+                    {
+                        int recv;
+                        data = new byte[100];
+                        recv = ns.Read(data, 0, data.Length);
+                        if (recv == 0)
+                            break;
+                        Console.WriteLine("\nCLIENT : " + connections);
+                        for (int i = 0; i < recv; i++)
+                            Console.Write(Convert.ToChar(data[i]));
+                        Console.WriteLine("\n");
+                    }
+                    ns.Close();
+                    client.Close(); 
+                    connections--;
+                    Console.WriteLine("Client disconnected: {0} active connections",connections);
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine("Error: {0}", e.Message);
+                }
+           }
+
+        }
+   }
+/*
+ TCPClient tc = TCPListener.AcceptTcpClient();
+Socket s = tc.Client;
+Console.WriteLine("I am connected to " +
+IPAddress.Parse(((IPEndPoint)s.RemoteEndPoint).Add ress.ToString()) +
+"on port number " + ((IPEndPoint)s.RemoteEndPoint).Port.ToString());
+ */
+//BlockSize: 128
+//KeySize: 256
+//Mode: CipherMode.CBC
+//Padding: PaddingMode.PKCS7
+
+//The valid IV sizes are:
+//128, 192, 256 bits (This is the BlockSize, make sure to set it to size IV you are using)
+//The valid Key sizes are:
+//128, 192, 256 bits (This is the KeySize, make sure to set it to the size key you are using)
+
+//This means that the byte[] iv can be 16, 24, or 32 bytes (in my above example its 16 bytes) and the byte[] key can also be 16, 24, or 32 bytes (in my above example its 16 bytes).
